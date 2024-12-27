@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgresql://postgres2:password2@db:5432/people_db
+      - DB_HOST=db
+      - DB_PORT=5432
+      - AWS_REGION=us-east-1
+      - COGNITO_USER_POOL_ID=
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
+
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres2
+      POSTGRES_PASSWORD: password2
+      POSTGRES_DB: people_db
+    ports:
+      - "5433:5432"
