@@ -1,8 +1,6 @@
-import json
 import os
 import jwt
-import requests
-from jwt.algorithms import RSAAlgorithm
+from jwt import PyJWKClient
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Header
 from app.schemas import schemas
@@ -13,46 +11,44 @@ router = APIRouter()
 cognito_region = os.getenv('AWS_REGION')
 cognito_pool_id = os.getenv('COGNITO_USER_POOL_ID')
 keys_url = f'https://cognito-idp.{cognito_region}.amazonaws.com/{cognito_pool_id}/.well-known/jwks.json'
-keys_response = requests.get(keys_url)
-public_keys = keys_response.json()['keys']
 
-def decode_token(token: str):
+def verify_token(token: str):
     if not token.startswith('Bearer '):
-        raise HTTPException(status_code=401, detail="Invalid token format")
+        return False, "Invalid token format"
     
     token = token.split(' ')[1]
 
-    headers = jwt.get_unverified_header(token)
-    key_id = headers['kid']
-    public_key = next((key for key in public_keys if key['kid'] == key_id), None)
+    try:
+        # Fetch public keys from AWS Cognito
+        jwks_client = PyJWKClient(keys_url)
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
 
-    if not public_key:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    
-    public_key_pem = RSAAlgorithm.from_jwk(json.dumps(public_key))
-    decoded_token = jwt.decode(
-        token,
-        key=public_key_pem,
-        algorithms=['RS256']
-    )
-
-    return decoded_token    
+        # Decode and validate the token
+        payload = jwt.decode(token, signing_key.key, algorithms=["RS256"])
+        return True, payload
+    except jwt.ExpiredSignatureError:
+        return False, "Token expired"
+    except Exception:
+        return False, "Invalid token"
 
 async def get_user_groups(authorization: str = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="No token provided")
     
+    valid, token = verify_token(authorization)
+
+    if not valid:
+        raise HTTPException(status_code=401, detail=token)
+    
     try:
-        decoded_token = decode_token(authorization)
-       
         # Get user's groups
         groups_response = cognito_client.admin_list_groups_for_user(
             UserPoolId=os.getenv('COGNITO_USER_POOL_ID'),
-            Username=decoded_token['username']
+            Username=token['username']
         )
         
         return [group['GroupName'] for group in groups_response['Groups']]
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid token or user not found")
     
 
