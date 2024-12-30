@@ -75,7 +75,7 @@ async def get_user_info(user_id: str):
             groups=[group['GroupName'] for group in groups_response['Groups']]
         )
     except Exception as e:
-        return None
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
     
 
 @router.get("/jury-members", response_model=List[schemas.UserBasic])
@@ -113,18 +113,17 @@ async def get_jury_members(groups: List[str] = Depends(get_user_groups)):
 
 @router.get("/internal/users/{user_id}", response_model=schemas.User)
 async def get_user(user_id: str):
-    try:
-        return get_user_info(user_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="User not found")
+    return await get_user_info(user_id)
     
 @router.post("/internal/users/bulk", response_model=List[schemas.User])
-async def get_users(user_ids: List[str]):
+async def get_users(request: schemas.InternalUsersBulkRequest):
     users = []
-    for user_id in user_ids:
+    for user_id in request.user_ids:
         try:
-            users.append(get_user_info(user_id))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"User {user_id} not found")
+            user = await get_user_info(user_id)
+            if user:
+                users.append(user)
+        except HTTPException as e:
+            pass  # Skip users that are not found
     
     return users

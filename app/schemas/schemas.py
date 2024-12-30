@@ -9,3 +9,6 @@ class UserBasic(BaseModel):
 class User(UserBasic):
     email: str
     groups: List[str]
+
+class InternalUsersBulkRequest(BaseModel):
+    user_ids: List[str]
