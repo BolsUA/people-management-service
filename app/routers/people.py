@@ -51,6 +51,32 @@ async def get_user_groups(authorization: str = Header(None)):
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token or user not found")
     
+async def get_user_info(user_id: str):
+    try:
+        response = cognito_client.admin_get_user(
+            UserPoolId=os.getenv('COGNITO_USER_POOL_ID'),
+            Username=user_id
+        )
+        
+        attributes = {
+            attr['Name']: attr['Value']
+            for attr in response['UserAttributes']
+        }
+
+        groups_response = cognito_client.admin_list_groups_for_user(
+            UserPoolId=os.getenv('COGNITO_USER_POOL_ID'),
+            Username=user_id
+        )
+        
+        return schemas.User(
+            id=response['Username'],
+            name=attributes.get('name', response['Username']),
+            email=attributes.get('email', ''),
+            groups=[group['GroupName'] for group in groups_response['Groups']]
+        )
+    except Exception as e:
+        return None
+    
 
 @router.get("/jury-members", response_model=List[schemas.UserBasic])
 async def get_jury_members(groups: List[str] = Depends(get_user_groups)):
@@ -88,26 +114,17 @@ async def get_jury_members(groups: List[str] = Depends(get_user_groups)):
 @router.get("/internal/users/{user_id}", response_model=schemas.User)
 async def get_user(user_id: str):
     try:
-        response = cognito_client.admin_get_user(
-            UserPoolId=os.getenv('COGNITO_USER_POOL_ID'),
-            Username=user_id
-        )
-        
-        attributes = {
-            attr['Name']: attr['Value']
-            for attr in response['UserAttributes']
-        }
-
-        groups_response = cognito_client.admin_list_groups_for_user(
-            UserPoolId=os.getenv('COGNITO_USER_POOL_ID'),
-            Username=user_id
-        )
-        
-        return schemas.User(
-            id=response['Username'],
-            name=attributes.get('name', response['Username']),
-            email=attributes.get('email', ''),
-            groups=[group['GroupName'] for group in groups_response['Groups']]
-        )
+        return get_user_info(user_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail="User not found")
+    
+@router.post("/internal/users/bulk", response_model=List[schemas.User])
+async def get_users(user_ids: List[str]):
+    users = []
+    for user_id in user_ids:
+        try:
+            users.append(get_user_info(user_id))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"User {user_id} not found")
+    
+    return users
